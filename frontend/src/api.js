@@ -1,107 +1,116 @@
-const API_BASE = 'http://localhost:8000';
-const WS_BASE = 'ws://localhost:8000';
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+const API_ORIGIN = API_BASE ? new URL(API_BASE, window.location.origin) : window.location;
+const WS_BASE = import.meta.env.VITE_WS_BASE_URL
+  || `${API_ORIGIN.protocol === 'https:' ? 'wss:' : 'ws:'}//${API_ORIGIN.host}`;
+
+async function request(path, options) {
+  const response = await fetch(`${API_BASE}${path}`, options);
+  if (!response.ok) {
+    throw new Error(`FARMACY API request failed (${response.status} ${response.statusText})`);
+  }
+  return response.json();
+}
 
 export async function fetchLatest() {
-  const res = await fetch(`${API_BASE}/api/sensors/latest`);
-  return res.json();
+  return request('/api/sensors/latest');
 }
 
 export async function fetchHistory(hours = 24) {
-  const res = await fetch(`${API_BASE}/api/sensors/history?hours=${hours}`);
-  return res.json();
+  return request(`/api/sensors/history?hours=${hours}`);
 }
 
 export async function fetchFarmHealth() {
-  const res = await fetch(`${API_BASE}/api/farm/health`);
-  return res.json();
+  return request('/api/farm/health');
 }
 
 export async function fetchCropRecommendations() {
-  const res = await fetch(`${API_BASE}/api/crops/recommend`);
-  return res.json();
+  return request('/api/crops/recommend');
 }
 
 export async function fetchIrrigationStatus() {
-  const res = await fetch(`${API_BASE}/api/irrigation/status`);
-  return res.json();
+  return request('/api/irrigation/status');
 }
 
 export async function controlIrrigation(data) {
-  const res = await fetch(`${API_BASE}/api/irrigation/control`, {
+  return request('/api/irrigation/control', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  return res.json();
 }
 
 export async function fetchIrrigationHistory(limit = 50) {
-  const res = await fetch(`${API_BASE}/api/irrigation/history?limit=${limit}`);
-  return res.json();
+  return request(`/api/irrigation/history?limit=${limit}`);
 }
 
 export async function fetchZones() {
-  const res = await fetch(`${API_BASE}/api/zones`);
-  return res.json();
+  return request('/api/zones');
 }
 
 export async function fetchStats() {
-  const res = await fetch(`${API_BASE}/api/stats`);
-  return res.json();
+  return request('/api/stats');
 }
 
 export async function fetchReverseCheckCrops() {
-  const res = await fetch(`${API_BASE}/api/crops/reverse-check/crops`);
-  return res.json();
+  return request('/api/crops/reverse-check/crops');
 }
 
 export async function fetchReverseCheck(crop = 'tomato') {
-  const res = await fetch(`${API_BASE}/api/crops/reverse-check?crop=${encodeURIComponent(crop)}`);
-  return res.json();
+  return request(`/api/crops/reverse-check?crop=${encodeURIComponent(crop)}`);
 }
 
 export async function checkCustomConditions(data) {
-  const res = await fetch(`${API_BASE}/api/crops/reverse-check`, {
+  return request('/api/crops/reverse-check', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  return res.json();
 }
 
 export async function saveCropData(data) {
-  const res = await fetch(`${API_BASE}/api/crops/save-data`, {
+  return request('/api/crops/save-data', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  return res.json();
 }
 
-export function createWebSocket(onMessage) {
-  const ws = new WebSocket(`${WS_BASE}/ws/live`);
+export function createWebSocket(onMessage, onStatusChange = () => {}) {
+  let socket;
+  let reconnectTimer;
+  let stopped = false;
 
-  ws.onopen = () => {
-    console.log('[WS] Connected to FARMACY backend');
+  const connect = () => {
+    if (stopped) return;
+    socket = new WebSocket(`${WS_BASE}/ws/live`);
+    socket.onopen = () => {
+      console.log('[WS] Connected to FARMACY backend');
+      onStatusChange(true);
+    };
+    socket.onmessage = (event) => {
+      try {
+        onMessage(JSON.parse(event.data));
+      } catch (error) {
+        console.error('[WS] Message error:', error);
+      }
+    };
+    socket.onerror = (error) => console.error('[WS] Error:', error);
+    socket.onclose = () => {
+      onStatusChange(false);
+      if (!stopped) {
+        console.log('[WS] Disconnected. Reconnecting in 3s...');
+        reconnectTimer = setTimeout(connect, 3000);
+      }
+    };
   };
 
-  ws.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data);
-      onMessage(data);
-    } catch (e) {
-      console.error('[WS] Parse error:', e);
-    }
-  };
+  connect();
 
-  ws.onerror = (err) => {
-    console.error('[WS] Error:', err);
+  return {
+    close() {
+      stopped = true;
+      clearTimeout(reconnectTimer);
+      socket?.close();
+    },
   };
-
-  ws.onclose = () => {
-    console.log('[WS] Disconnected. Reconnecting in 3s...');
-    setTimeout(() => createWebSocket(onMessage), 3000);
-  };
-
-  return ws;
 }

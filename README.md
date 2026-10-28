@@ -6,7 +6,7 @@
 
 ## 🚀 How to Start the Application
 
-For complete, detailed instructions, see the **[STARTUP_GUIDE.md](file:///e:/farmacy/STARTUP_GUIDE.md)**.
+For complete, detailed instructions, see the **[STARTUP_GUIDE.md](./STARTUP_GUIDE.md)**.
 
 ### Quick Start (1-Click)
 - **Windows Batch**: Double-click `start.bat` or run `.\start.bat`
@@ -30,7 +30,7 @@ For complete, detailed instructions, see the **[STARTUP_GUIDE.md](file:///e:/far
    Runs at: [http://localhost:5173/](http://localhost:5173/)
 
 3. **Arduino Hardware**:
-   Upload [project.ino](file:///e:/farmacy/project.ino) to your Arduino board via Arduino IDE.
+   Open [project/project.ino](./project/project.ino) in the Arduino IDE and upload it to your board.
 
 ---
 

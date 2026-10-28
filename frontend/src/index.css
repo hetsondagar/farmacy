@@ -398,6 +398,13 @@ body {
   margin-left: 2px;
 }
 
+.sensor-raw-value {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+}
+
 .sensor-bar {
   margin-top: 14px;
   height: 4px;

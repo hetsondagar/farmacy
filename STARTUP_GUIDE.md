@@ -7,9 +7,9 @@ This guide contains complete instructions for running the **FARMACY** IoT Smart 
 ## 🏗️ System Overview
 
 The application consists of three main components:
-1. **Hardware Layer ([project.ino](file:///e:/farmacy/project.ino))**: Arduino sketch collecting data from Soil Moisture (A0), DHT11 (Pin 2), LDR (A1), and Rain sensor (A2), driving Relays on pins 7 & 8.
-2. **Backend Server ([backend/](file:///e:/farmacy/backend))**: FastAPI REST API + WebSockets, SQLite database, AI Crop Model (`crop_model.joblib`), and Reverse Crop Condition Checker (`crop_data.csv`).
-3. **Frontend Dashboard ([frontend/](file:///e:/farmacy/frontend))**: React + Vite responsive dark-themed dashboard with real-time gauges, digital twin map, and crop advisory.
+1. **Hardware Layer ([project/project.ino](./project/project.ino))**: Arduino sketch collecting data from Soil Moisture (A0), DHT11 (Pin 2), LDR (A1), and Rain sensor (A2), driving Relays on pins 7 & 8.
+2. **Backend Server ([backend/](./backend/))**: FastAPI REST API + WebSockets, SQLite database, AI Crop Model (`crop_model.joblib`), and Reverse Crop Condition Checker (`crop_data.csv`).
+3. **Frontend Dashboard ([frontend/](./frontend/))**: React + Vite responsive dark-themed dashboard with real-time gauges, digital twin map, and crop advisory.
 
 ---
 
@@ -39,7 +39,7 @@ Ensure you have the following installed on your computer:
 
 1. Open a terminal and navigate to the `backend` folder:
    ```powershell
-   cd e:\farmacy\backend
+   Set-Location "<path-to-farmacy>\backend"
    ```
 
 2. *(First time only)* Install Python requirements:
@@ -56,7 +56,7 @@ Ensure you have the following installed on your computer:
 - **Interactive API Documentation (Swagger)**: `http://localhost:8000/docs`
 - **WebSocket Endpoint**: `ws://localhost:8000/ws/live`
 
-> **Note on Simulation Mode:** If no physical Arduino board is connected to your USB port, the backend automatically operates in **Simulation Mode**, generating realistic sensor streams so all dashboards, charts, and recommendations work immediately.
+> **Note on data mode:** The backend uses real sensor data by default. To generate mock sensor readings, create or update `backend/.env` and set `SIMULATION_MODE=true`, then restart the backend. Set it to `false` (or omit it) to use real sensor data. In real-data mode, the configured hardware must be available; the backend will report connection errors rather than silently switching to mock data.
 
 ---
 
@@ -64,7 +64,7 @@ Ensure you have the following installed on your computer:
 
 1. Open a second terminal and navigate to the `frontend` folder:
    ```powershell
-   cd e:\farmacy\frontend
+   Set-Location "<path-to-farmacy>\frontend"
    ```
 
 2. *(First time only)* Install node modules:
@@ -85,16 +85,19 @@ Ensure you have the following installed on your computer:
 
 If you are connecting physical micro-farm hardware:
 1. Connect your Arduino board via USB.
-2. Open [project.ino](file:///e:/farmacy/project.ino) in the Arduino IDE.
+2. Open [project/project.ino](./project/project.ino) in the Arduino IDE. The sketch is inside the `project` folder; open the `.ino` file rather than the repository root.
 3. Select your board (e.g. *Arduino Uno*) and Port (e.g. *COM3*).
 4. Click **Upload**.
-5. Update your `backend/.env` file with the matching COM port:
+5. Close the Arduino IDE Serial Monitor so the backend can access the board's COM port.
+6. Create or update `backend/.env` with the matching COM port:
    ```env
    SERIAL_PORT=COM3
    SERIAL_BAUD=9600
    SIMULATION_MODE=false
    ```
-6. Restart the backend server. The live sensor readings from your physical sensors will stream directly into the dashboard.
+7. Restart the backend server. Sensor readings stream to the dashboard, and irrigation controls send relay commands back to the Arduino.
+
+The sketch sends labeled sensor readings over USB serial once per second (soil ADC, temperature, humidity, light ADC, and rain ADC). The backend accepts this labeled format as well as positional CSV, converts the analog readings, and broadcasts updates to the frontend over WebSocket. Relay 1 controls the pump and Relay 2 controls the valve; automatic irrigation decisions are made by the backend. In the frontend, set `VITE_API_BASE_URL` (and optionally `VITE_WS_BASE_URL`) only when the API is hosted somewhere other than the same origin. During local Vite development, `/api` and `/ws` are proxied to `http://localhost:8000`.
 
 ---
 
@@ -124,12 +127,12 @@ If you are connecting physical micro-farm hardware:
 
 ## 📁 Key File Locations
 
-- [project.ino](file:///e:/farmacy/project.ino) — Arduino source sketch
-- [farmacy.png](file:///e:/farmacy/farmacy.png) — Official brand logo
-- [crop_model.joblib](file:///e:/farmacy/crop_model.joblib) — Trained crop prediction model
-- [crop_data.csv](file:///e:/farmacy/crop_data.csv) — Historical crop baseline dataset
-- [reverse_checker.py](file:///e:/farmacy/reverse_checker.py) — Standalone Reverse Crop Condition Checker script
-- [backend/main.py](file:///e:/farmacy/backend/main.py) — FastAPI backend application
-- [backend/database.py](file:///e:/farmacy/backend/database.py) — SQLite database schema & queries
-- [backend/farmacy.db](file:///e:/farmacy/backend/farmacy.db) — SQLite database file
-- [frontend/src/App.jsx](file:///e:/farmacy/frontend/src/App.jsx) — Main frontend application
+- [project/project.ino](./project/project.ino) — Arduino source sketch
+- [farmacy.png](./farmacy.png) — Official brand logo
+- [crop_model.joblib](./crop_model.joblib) — Trained crop prediction model
+- [crop_data.csv](./crop_data.csv) — Historical crop baseline dataset
+- [reverse_checker.py](./reverse_checker.py) — Standalone Reverse Crop Condition Checker script
+- [backend/main.py](./backend/main.py) — FastAPI backend application
+- [backend/database.py](./backend/database.py) — SQLite database schema & queries
+- [backend/farmacy.db](./backend/farmacy.db) — SQLite database file
+- [frontend/src/App.jsx](./frontend/src/App.jsx) — Main frontend application

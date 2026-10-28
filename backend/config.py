@@ -4,7 +4,7 @@ FARMACY Backend Configuration
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 # Serial port for Arduino connection
 SERIAL_PORT = os.getenv("SERIAL_PORT", "COM3")
@@ -16,8 +16,8 @@ DATABASE_PATH = os.getenv("DATABASE_PATH", "farmacy.db")
 # Crop model
 MODEL_PATH = os.getenv("MODEL_PATH", "../crop_model.joblib")
 
-# Simulation mode (when no Arduino is connected)
-SIMULATION_MODE = os.getenv("SIMULATION_MODE", "true").lower() == "true"
+# Generate mock sensor readings only when explicitly enabled.
+SIMULATION_MODE = os.getenv("SIMULATION_MODE", "false").lower() == "true"
 
 # API
 API_HOST = os.getenv("API_HOST", "0.0.0.0")

@@ -26,6 +26,7 @@ const SENSOR_CONFIG = [
     unit: '%',
     cssClass: 'soil',
     maxVal: 100,
+    showRawAdc: true,
     format: v => v?.toFixed(1),
   },
   {
@@ -35,6 +36,7 @@ const SENSOR_CONFIG = [
     unit: '%',
     cssClass: 'light',
     maxVal: 100,
+    showRawAdc: true,
     format: v => v?.toFixed(1),
   },
   {
@@ -44,6 +46,7 @@ const SENSOR_CONFIG = [
     unit: '%',
     cssClass: 'rain',
     maxVal: 100,
+    showRawAdc: true,
     format: v => v?.toFixed(1),
   },
 ];
@@ -80,6 +83,9 @@ export default function SensorGauges({ data }) {
             <div className="sensor-value">
               {displayVal}<span className="unit">{sensor.unit}</span>
             </div>
+            {sensor.showRawAdc && data.raw_adc?.[sensor.key] != null && (
+              <div className="sensor-raw-value">Raw ADC: {data.raw_adc[sensor.key]}</div>
+            )}
             <div className="sensor-bar">
               <div
                 className={`sensor-bar-fill ${sensor.cssClass}`}

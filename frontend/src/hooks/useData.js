@@ -22,9 +22,8 @@ export function useLiveData() {
         setSensorData(msg.data);
         setHealthData(msg.health);
         setIrrigationData(msg.irrigation);
-        setConnected(true);
       }
-    });
+    }, setConnected);
 
     return () => {
       if (wsRef.current) {

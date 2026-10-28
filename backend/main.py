@@ -50,6 +50,7 @@ relay_state = {
 connected_websockets: list[WebSocket] = []
 serial_connection = None
 mqtt_client = None
+CROP_DATA_SAVE_INTERVAL_SECONDS = 20
 
 
 # ==================== SENSOR VALUE MAPPING ====================
@@ -61,11 +62,11 @@ def map_soil_moisture(raw: float) -> float:
     return round(max(0, min(100, pct)), 1)
 
 
-def map_light(raw: float) -> float:
-    """Map raw analog to percentage (0-100). If already Lux/pct, clamps."""
-    if raw <= 100.0:
+def map_light(raw: float, *, raw_adc: bool = False) -> float:
+    """Map LDR ADC readings to brightness; preserve already-normalized percentages."""
+    if not raw_adc and raw <= 100.0:
         return round(max(0, min(100, raw)), 1)
-    pct = (raw / LIGHT_MAX) * 100
+    pct = 100 - (raw / LIGHT_MAX) * 100
     return round(max(0, min(100, pct)), 1)
 
 
@@ -161,17 +162,26 @@ def serial_reader_thread():
         simulate_data()
         return
 
+    print(f"[SERIAL] Connecting to {SERIAL_PORT} at {SERIAL_BAUD} baud")
+    print(
+        f"[SERIAL] Live readings will be logged as received; crop-data snapshots "
+        f"will be saved every {CROP_DATA_SAVE_INTERVAL_SECONDS} seconds"
+    )
     try:
         import serial
         serial_connection = serial.Serial(SERIAL_PORT, SERIAL_BAUD, timeout=2)
         print(f"[SERIAL] Connected to {SERIAL_PORT} at {SERIAL_BAUD} baud")
         time.sleep(2)
+        next_crop_save_at = time.monotonic() + CROP_DATA_SAVE_INTERVAL_SECONDS
 
         while True:
             try:
                 line = serial_connection.readline().decode("utf-8").strip()
                 if not line:
                     continue
+
+                print(f"[SERIAL] Raw line: {line}", flush=True)
+                raw_adc = None
 
                 # Handle JSON stream from ESP32
                 if line.startswith("{") and line.endswith("}"):
@@ -189,18 +199,58 @@ def serial_reader_thread():
                 else:
                     if line.startswith("soil_moisture"):
                         continue
-                    parts = line.split(",")
-                    if len(parts) < 5:
-                        continue
+                    if ":" in line:
+                        labels = {
+                            "soil": "soil_moisture",
+                            "soilmoisture": "soil_moisture",
+                            "temp": "temperature",
+                            "temperature": "temperature",
+                            "humidity": "humidity",
+                            "light": "light",
+                            "rain": "rain",
+                        }
+                        values = {}
+                        for item in line.split(","):
+                            key, separator, value = item.partition(":")
+                            field = labels.get(key.strip().lower().replace("_", "").replace(" ", ""))
+                            if separator and field:
+                                values[field] = float(value.strip())
 
-                    soil_pct = map_soil_moisture(float(parts[0]))
-                    temp = round(float(parts[1]), 1)
-                    humid = round(float(parts[2]), 1)
-                    light = map_light(float(parts[3]))
-                    rain = map_rain(float(parts[4]))
-                    ph = round(float(parts[5]), 2) if len(parts) > 5 else 6.5
-                    soil_temp = round(float(parts[6]), 1) if len(parts) > 6 else round(temp - 1.5, 1)
-                    water_lvl = round(float(parts[7]), 1) if len(parts) > 7 else 80.0
+                        required_fields = {"soil_moisture", "temperature", "humidity", "light", "rain"}
+                        if not required_fields.issubset(values):
+                            continue
+
+                        raw_adc = {
+                            "soil_moisture": values["soil_moisture"],
+                            "light": values["light"],
+                            "rain": values["rain"],
+                        }
+                        soil_pct = map_soil_moisture(values["soil_moisture"])
+                        temp = round(values["temperature"], 1)
+                        humid = round(values["humidity"], 1)
+                        light = map_light(values["light"], raw_adc=True)
+                        rain = map_rain(values["rain"])
+                        ph = 6.5
+                        soil_temp = round(temp - 1.5, 1)
+                        water_lvl = 80.0
+                    else:
+                        parts = line.split(",")
+                        if len(parts) < 5:
+                            continue
+
+                        raw_adc = {
+                            "soil_moisture": float(parts[0]),
+                            "light": float(parts[3]),
+                            "rain": float(parts[4]),
+                        }
+                        soil_pct = map_soil_moisture(float(parts[0]))
+                        temp = round(float(parts[1]), 1)
+                        humid = round(float(parts[2]), 1)
+                        light = map_light(float(parts[3]), raw_adc=True)
+                        rain = map_rain(float(parts[4]))
+                        ph = round(float(parts[5]), 2) if len(parts) > 5 else 6.5
+                        soil_temp = round(float(parts[6]), 1) if len(parts) > 6 else round(temp - 1.5, 1)
+                        water_lvl = round(float(parts[7]), 1) if len(parts) > 7 else 80.0
 
                 latest_data = {
                     "soil_moisture": soil_pct,
@@ -212,9 +262,50 @@ def serial_reader_thread():
                     "soil_temperature": soil_temp,
                     "water_level": water_lvl,
                     "timestamp": datetime.now().isoformat(),
+                    "raw_adc": raw_adc,
                 }
 
+                if raw_adc is not None:
+                    print(
+                        f"[SERIAL] Received: soil={raw_adc['soil_moisture']:.0f} ADC, "
+                        f"temp={temp:.1f} C, humidity={humid:.1f}%, "
+                        f"light={raw_adc['light']:.0f} ADC, rain={raw_adc['rain']:.0f} ADC",
+                        flush=True,
+                    )
+                    print(
+                        f"[SERIAL] Dashboard values: soil={soil_pct:.1f}%, "
+                        f"temp={temp:.1f} C, humidity={humid:.1f}%, "
+                        f"light={light:.1f}%, rain={rain:.1f}%",
+                        flush=True,
+                    )
+
                 db.insert_reading(soil_pct, temp, humid, light, rain, ph, soil_temp, water_lvl)
+
+                if raw_adc is not None and time.monotonic() >= next_crop_save_at:
+                    result = save_crop_data({
+                        "rain_sensor_adc": raw_adc["rain"],
+                        "ldr_adc": raw_adc["light"],
+                        "temperature_c": temp,
+                        "humidity_percent": humid,
+                    })
+                    if result["status"] == "success":
+                        saved = result["saved_data"]
+                        print(
+                            f"[CROP DATA] {datetime.now().isoformat(timespec='seconds')} "
+                            f"saved every-{CROP_DATA_SAVE_INTERVAL_SECONDS}s sample: "
+                            f"crop={saved['crop_label']}, "
+                            f"temp={saved['temperature_c']:.1f} C, "
+                            f"humidity={saved['humidity_percent']:.1f}%, "
+                            f"light={saved['ldr_adc']:.0f} ADC, "
+                            f"rain={saved['rain_sensor_adc']:.0f} ADC",
+                            flush=True,
+                        )
+                    else:
+                        print(
+                            f"[CROP DATA] Could not save 20-second sample: {result['message']}",
+                            flush=True,
+                        )
+                    next_crop_save_at = time.monotonic() + CROP_DATA_SAVE_INTERVAL_SECONDS
 
                 if relay_state["auto_mode"]:
                     decision = should_irrigate(soil_pct, rain, water_lvl)
@@ -230,18 +321,16 @@ def serial_reader_thread():
                         db.insert_irrigation_log(False, False, True, decision["reason"])
 
             except (ValueError, IndexError) as e:
+                print(f"[SERIAL] Could not parse reading: {e}", flush=True)
                 continue
             except Exception as e:
                 print(f"[SERIAL] Read error: {e}")
                 time.sleep(1)
 
-    except ImportError:
-        print("[SERIAL] pyserial not installed. Running in simulation mode.")
-        simulate_data()
+    except ImportError as e:
+        print(f"[SERIAL] pyserial is not installed; cannot read real sensor data: {e}")
     except Exception as e:
-        print(f"[SERIAL] Cannot open {SERIAL_PORT}: {e}")
-        print("[SERIAL] Falling back to simulation mode.")
-        simulate_data()
+        print(f"[SERIAL] Cannot open {SERIAL_PORT}; real sensor data is unavailable: {e}")
 
 
 def simulate_data():
@@ -355,10 +444,11 @@ def simulate_data():
         time.sleep(2)
 
 
-def send_relay_command(state: bool):
+def send_relay_command(state: bool, relay: str = "both"):
     """Send relay control command to Arduino via serial or MQTT."""
     global serial_connection, mqtt_client
-    cmd = "RELAY_ON\n" if state else "RELAY_OFF\n"
+    suffix = "ON" if state else "OFF"
+    cmd = f"RELAY{relay[-1]}_{suffix}\n" if relay in ("relay1", "relay2") else f"RELAY_{suffix}\n"
 
     # Serial
     if serial_connection and serial_connection.is_open:
@@ -371,11 +461,12 @@ def send_relay_command(state: bool):
     if mqtt_client:
         try:
             msg = json.dumps({
-                "pump": state,
-                "valve": state,
-                "relay1": state,
-                "relay2": state,
-                "command": "ON" if state else "OFF",
+                "pump": relay_state["relay1"],
+                "valve": relay_state["relay2"],
+                "relay1": relay_state["relay1"],
+                "relay2": relay_state["relay2"],
+                "relay": relay,
+                "command": suffix,
                 "timestamp": datetime.now().isoformat()
             })
             mqtt_client.publish(MQTT_TOPIC_CONTROL, msg)
@@ -763,7 +854,10 @@ def control_irrigation(control: dict):
         relay_state["auto_mode"] = bool(control["auto"])
 
     if not relay_state["auto_mode"]:
-        send_relay_command(relay_state["relay1"])
+        if "relay1" in control:
+            send_relay_command(relay_state["relay1"], "relay1")
+        if "relay2" in control:
+            send_relay_command(relay_state["relay2"], "relay2")
 
     db.insert_irrigation_log(
         relay_state["relay1"], relay_state["relay2"],
@@ -893,7 +987,11 @@ async def websocket_endpoint(websocket: WebSocket):
                         relay_state["relay2"] = bool(msg["relay2"])
                     if "auto" in msg:
                         relay_state["auto_mode"] = bool(msg["auto"])
-                    send_relay_command(relay_state["relay1"])
+                    if not relay_state["auto_mode"]:
+                        if "relay1" in msg:
+                            send_relay_command(relay_state["relay1"], "relay1")
+                        if "relay2" in msg:
+                            send_relay_command(relay_state["relay2"], "relay2")
             except:
                 pass
     except WebSocketDisconnect:
