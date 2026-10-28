@@ -1211,3 +1211,7 @@ rain_sensor_adc,ldr_adc,temperature_c,humidity_percent,crop_label
 913.539,410.223,20.2,51.6,safflower
 943.206,490.017,20.3,52.2,safflower
 1023.0,562.6500000000001,20.5,52.2,safflower
+1023.0,587.202,19.3,51.9,safflower
+1023.0,530.937,19.5,50.3,safflower
+1023.0,513.546,18.8,49.6,mustard
+1023.0,448.07399999999996,19.3,49.1,mustard
