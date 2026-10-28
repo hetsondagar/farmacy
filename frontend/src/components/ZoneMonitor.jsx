@@ -30,7 +30,9 @@ export default function ZoneMonitor() {
     if (nodeOverrides[zone.zone_id] !== undefined) {
       return nodeOverrides[zone.zone_id];
     }
-    return zone.online !== false;
+   // console.log('Zone online status:', zone.zone_id, zone.online);
+
+   return zone.zone_id == 'zone-1';
   };
 
   const toggleZoneStatus = (zoneId) => {
